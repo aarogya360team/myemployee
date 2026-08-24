@@ -94,6 +94,7 @@ export async function provisionNewShop(
         approvalRequired: rule.approvalRequired,
         enabled: rule.enabled,
       })),
+      skipDuplicates: true,
     });
   }
   if (process.env.DEMO_MODE === "true") {

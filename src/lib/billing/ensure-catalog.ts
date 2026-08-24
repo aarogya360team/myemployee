@@ -1,5 +1,10 @@
+import { Prisma } from "@prisma/client";
 import { ADDON_CATALOG, PLAN_CATALOG } from "./catalog";
 import { prisma } from "@/lib/prisma";
+
+function isUnique(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
 
 export async function ensureBillingCatalog() {
   const count = await prisma.plan.count().catch((error: unknown) => {
@@ -11,28 +16,48 @@ export async function ensureBillingCatalog() {
     }
     throw error;
   });
-  if (count >= PLAN_CATALOG.length) return;
-  for (const plan of PLAN_CATALOG) {
-    const row = await prisma.plan.upsert({
-      where: { code: plan.code },
-      update: {},
-      create: {
-        code: plan.code,
-        name: plan.name,
-        tagline: plan.tagline,
-        monthlyPaise: plan.monthlyPaise,
-        annualPaise: plan.annualPaise,
-        trialDays: plan.trialDays,
-        popular: plan.popular,
-        sortOrder: plan.sortOrder,
-        features: { create: plan.features.map((feature) => ({ feature })) },
-        limits: {
-          create: Object.entries(plan.limits).map(([key, value]) => ({ key, value })),
+  if (count < PLAN_CATALOG.length) {
+    for (const plan of PLAN_CATALOG) {
+      const row = await prisma.plan.upsert({
+        where: { code: plan.code },
+        update: {
+          name: plan.name,
+          tagline: plan.tagline,
+          monthlyPaise: plan.monthlyPaise,
+          annualPaise: plan.annualPaise,
+          trialDays: plan.trialDays,
+          popular: plan.popular,
+          sortOrder: plan.sortOrder,
         },
-      },
-    });
-    if (row) {
-      /* created or existed */
+        create: {
+          code: plan.code,
+          name: plan.name,
+          tagline: plan.tagline,
+          monthlyPaise: plan.monthlyPaise,
+          annualPaise: plan.annualPaise,
+          trialDays: plan.trialDays,
+          popular: plan.popular,
+          sortOrder: plan.sortOrder,
+        },
+      });
+      for (const feature of plan.features) {
+        await prisma.planFeature.upsert({
+          where: { planId_feature: { planId: row.id, feature } },
+          update: {},
+          create: { planId: row.id, feature },
+        }).catch((error) => {
+          if (!isUnique(error)) throw error;
+        });
+      }
+      for (const [key, value] of Object.entries(plan.limits)) {
+        await prisma.planLimit.upsert({
+          where: { planId_key: { planId: row.id, key } },
+          update: { value },
+          create: { planId: row.id, key, value },
+        }).catch((error) => {
+          if (!isUnique(error)) throw error;
+        });
+      }
     }
   }
   for (const addon of ADDON_CATALOG) {
@@ -48,6 +73,8 @@ export async function ensureBillingCatalog() {
         metric: addon.metric,
         amount: addon.amount,
       },
+    }).catch((error) => {
+      if (!isUnique(error)) throw error;
     });
   }
 }

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { getSessionState } from "@/lib/auth";
 import {
@@ -63,7 +64,13 @@ export async function POST(request: NextRequest) {
         select: { businessId: true },
       }))?.businessId ?? null;
     if (existingId) {
-      await provisionNewShop(session.user.id, existingId);
+      try {
+        await provisionNewShop(session.user.id, existingId);
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+          throw error;
+        }
+      }
       const business = await getBusinessForUser(session.user.id, existingId, existingId);
       return json({ business: serializeBusiness(business) });
     }
