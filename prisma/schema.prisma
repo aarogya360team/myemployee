@@ -1,0 +1,719 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  name         String
+  image        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     Session[]
+  memberships  BusinessMembership[]
+  auditLogs    AuditLog[]
+  accounts     AuthAccount[]
+  platformRole String @default("CUSTOMER")
+}
+
+model AuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  token            String   @unique
+  userId           String
+  activeBusinessId String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Business {
+  id              String   @id @default(cuid())
+  name            String
+  legalName       String?
+  category        String
+  description     String?
+  address         String?
+  city            String?
+  phone           String
+  email           String?
+  gstin           String?
+  timezone        String   @default("Asia/Kolkata")
+  currency        String   @default("INR")
+  defaultLanguage String   @default("hinglish")
+  vertical        String   @default("ELECTRICAL_WHOLESALER")
+  baselineConversionRate Float?
+  referralCode    String?  @unique
+  onboardingStep  Int      @default(1)
+  onboardingJson  String   @default("{}")
+  whatsappPath    String?
+  goLiveAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships  BusinessMembership[]
+  employees    Employee[]
+  settings     BusinessSettings?
+  hours        BusinessHours[]
+  integrations Integration[]
+  features     BusinessFeature[]
+  auditLogs    AuditLog[]
+  products     Product[]
+  customers    Customer[]
+  conversations Conversation[]
+  orders       Order[]
+  invoices     ShopInvoice[]
+  payments     ShopPayment[]
+  deliveries   Delivery[]
+  escalations  Escalation[]
+  subscriptions Subscription[]
+  usageRecords UsageRecord[]
+  usageCounters UsageCounter[]
+  addonSubs    AddonSubscription[]
+  journeys     CustomerJourney[]
+  campaigns    MarketingCampaign[]
+  assets       CreativeAsset[]
+  brandKit     BrandKit?
+  referralsMade Referral[] @relation("Referrer")
+  recoveryOpportunities RecoveryOpportunity[]
+  businessRules BusinessRule[]
+  timelineEvents TimelineEvent[]
+  caseStudyApprovals CaseStudyApproval[]
+  memoryFacts CustomerMemoryFact[]
+}
+
+model BusinessMembership {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  role       String
+  createdAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+}
+
+model Employee {
+  id               String   @id @default(cuid())
+  businessId       String
+  name             String
+  avatar           String?
+  role             String
+  type             String
+  status           String   @default("SETUP_REQUIRED")
+  pauseUntil       DateTime?
+  languages        String   @default("[\"hi\",\"en\",\"hinglish\"]")
+  personality      String   @default("{}")
+  responsibilities String   @default("{}")
+  workforceRole    String   @default("SALES")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, type])
+}
+
+model BusinessSettings {
+  businessId        String  @id
+  aiEnabled         Boolean @default(true)
+  defaultLanguage   String  @default("hinglish")
+  languagesEnabled  String  @default("[\"hi\",\"en\",\"hinglish\"]")
+  aiTone            String  @default("friendly")
+  escalationRules   String  @default("{}")
+  approvalRules     String  @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model BusinessHours {
+  id         String  @id @default(cuid())
+  businessId String
+  dayOfWeek  Int
+  openTime   String  @default("09:00")
+  closeTime  String  @default("19:00")
+  closed     Boolean @default(false)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dayOfWeek])
+}
+
+model BusinessFeature {
+  id         String   @id @default(cuid())
+  businessId String
+  pluginId   String
+  enabled    Boolean  @default(false)
+  config     String   @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, pluginId])
+  @@index([businessId])
+}
+
+model Integration {
+  id               String    @id @default(cuid())
+  businessId       String
+  provider         String
+  type             String
+  enabled          Boolean   @default(false)
+  config           String    @default("{}")
+  connectionStatus String    @default("NOT_CONNECTED")
+  displayPhone     String?
+  connectedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, provider, type])
+}
+
+model PhoneNumber {
+  id                 String   @id @default(cuid())
+  businessId         String
+  provider           String
+  e164               String
+  displayPhone       String
+  status             String   @default("RESERVED")
+  assignedEmployeeId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+model FunnelEvent {
+  id         String   @id @default(cuid())
+  businessId String?
+  userId     String?
+  name       String
+  createdAt  DateTime @default(now())
+
+  @@index([businessId, name, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  businessId String?
+  userId     String?
+  actorType  String
+  actorId    String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  businessId    String
+  sku           String
+  name          String
+  description   String?
+  category      String?
+  brand         String?
+  model         String?
+  pricePaise    Int
+  wholesalePaise Int?
+  retailPaise   Int?
+  taxRateBps    Int      @default(1800)
+  hsnCode       String?
+  stock         Int      @default(0)
+  minQty        Int      @default(1)
+  warranty      String?
+  active        Boolean  @default(true)
+  aliases       ProductAlias[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+  @@unique([businessId, sku])
+  @@index([businessId, name])
+}
+
+model ProductAlias {
+  id        String  @id @default(cuid())
+  productId String
+  alias     String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@index([alias])
+}
+
+model Customer {
+  id             String   @id @default(cuid())
+  businessId     String
+  phone          String
+  name           String?
+  email          String?
+  language       String   @default("hinglish")
+  segment        String   @default("NEW")
+  notes          String?
+  lastOrderAt    DateTime?
+  totalOrders    Int      @default(0)
+  totalValuePaise Int     @default(0)
+  memoryJson      String  @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  addresses      CustomerAddress[]
+  conversations  Conversation[]
+  orders         Order[]
+  timelineEvents TimelineEvent[]
+  recoveryOpportunities RecoveryOpportunity[]
+  memoryFacts    CustomerMemoryFact[]
+  @@unique([businessId, phone])
+}
+
+model CustomerAddress {
+  id         String  @id @default(cuid())
+  customerId String
+  line       String
+  city       String?
+  pincode    String?
+  isDefault  Boolean @default(false)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id          String   @id @default(cuid())
+  businessId  String
+  customerId  String?
+  channel     String
+  controlMode String   @default("AI")
+  language    String   @default("hinglish")
+  status      String   @default("OPEN")
+  currentState String  @default("NEW_ENQUIRY")
+  nextBestAction String?
+  missingInfo String   @default("[]")
+  blockingReason String?
+  confidence  Float    @default(0)
+  draftJson   String   @default("{}")
+  deadline    DateTime?
+  responsibleEmployeeId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  messages    Message[]
+  orders      Order[]
+  escalations Escalation[]
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  sender         String
+  type           String   @default("TEXT")
+  body           String
+  createdAt      DateTime @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id            String   @id @default(cuid())
+  businessId    String
+  customerId    String?
+  conversationId String?
+  status        String
+  attribution   String   @default("ORGANIC_WHATSAPP")
+  aiRole        String   @default("AI_ASSISTED")
+  source        String   @default("WHATSAPP")
+  totalPaise    Int      @default(0)
+  notes         String?
+  recovered     Boolean  @default(false)
+  attributionUncertain Boolean @default(false)
+  attributionEvidence String @default("{}")
+  employeeId    String?
+  campaignId    String?
+  adId          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  conversation  Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  items         OrderItem[]
+  invoices      ShopInvoice[]
+  payments      ShopPayment[]
+  deliveries    Delivery[]
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String?
+  name      String
+  qty       Int
+  pricePaise Int
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model ShopInvoice {
+  id         String   @id @default(cuid())
+  businessId String
+  orderId    String
+  number     String
+  kind       String
+  totalPaise Int
+  sent       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model ShopPayment {
+  id         String   @id @default(cuid())
+  businessId String
+  orderId    String
+  provider   String
+  status     String
+  amountPaise Int
+  link       String?
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Delivery {
+  id          String   @id @default(cuid())
+  businessId  String
+  orderId     String
+  provider    String
+  status      String
+  trackingId  String?
+  quotePaise  Int      @default(0)
+  createdAt   DateTime @default(now())
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Escalation {
+  id           String   @id @default(cuid())
+  businessId   String
+  conversationId String?
+  customerId   String?
+  orderId      String?
+  reason       String
+  priority     String   @default("NORMAL")
+  summary      String
+  recommendation String?
+  sentiment    String?
+  status       String   @default("NEW")
+  assignedTo   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  tagline     String
+  monthlyPaise Int
+  annualPaise Int
+  currency    String   @default("INR")
+  trialDays   Int      @default(14)
+  popular     Boolean  @default(false)
+  sortOrder   Int
+  features    PlanFeature[]
+  limits      PlanLimit[]
+  subscriptions Subscription[]
+}
+
+model PlanFeature {
+  id      String  @id @default(cuid())
+  planId  String
+  feature String
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  @@unique([planId, feature])
+}
+
+model PlanLimit {
+  id     String @id @default(cuid())
+  planId String
+  key    String
+  value  Int
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  @@unique([planId, key])
+}
+
+model Subscription {
+  id             String   @id @default(cuid())
+  businessId     String
+  planId         String
+  status         String
+  periodStart    DateTime
+  periodEnd      DateTime
+  trialEndsAt    DateTime?
+  graceUntil     DateTime?
+  performanceBps Int?
+  createdAt      DateTime @default(now())
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan           Plan     @relation(fields: [planId], references: [id], onDelete: Restrict)
+  @@index([businessId, status])
+}
+
+model UsageRecord {
+  id         String   @id @default(cuid())
+  businessId String
+  metric     String
+  quantity   Int      @default(1)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@index([businessId, metric, createdAt])
+}
+
+model UsageCounter {
+  id         String @id @default(cuid())
+  businessId String
+  metric     String
+  periodKey  String
+  used       Int    @default(0)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@unique([businessId, metric, periodKey])
+}
+
+model Addon {
+  id          String @id @default(cuid())
+  code        String @unique
+  name        String
+  description String
+  monthlyPaise Int
+  requiresFeature String?
+  metric      String?
+  amount      Int?
+  subscriptions AddonSubscription[]
+}
+
+model AddonSubscription {
+  id         String   @id @default(cuid())
+  businessId String
+  addonId    String
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  addon      Addon    @relation(fields: [addonId], references: [id], onDelete: Cascade)
+  @@unique([businessId, addonId])
+}
+
+model BillingInvoice {
+  id          String   @id @default(cuid())
+  businessId  String
+  number      String
+  totalPaise  Int
+  status      String
+  createdAt   DateTime @default(now())
+}
+
+model BillingPayment {
+  id         String   @id @default(cuid())
+  businessId String
+  provider   String   @default("mock")
+  status     String
+  amountPaise Int
+  createdAt  DateTime @default(now())
+}
+
+model Coupon {
+  id         String  @id @default(cuid())
+  code       String  @unique
+  percentOff Int?
+  paiseOff   Int?
+  active     Boolean @default(true)
+}
+
+model CustomerJourney {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String?
+  source     String
+  stage      String
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model MarketingCampaign {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  type       String
+  status     String   @default("DRAFT")
+  language   String   @default("hinglish")
+  body       String
+  audience   String?
+  approvedAt DateTime?
+  sent       Int      @default(0)
+  revenuePaise Int    @default(0)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assets     CreativeAsset[]
+}
+
+model CreativeAsset {
+  id         String   @id @default(cuid())
+  businessId String
+  campaignId String?
+  type       String
+  url        String
+  prompt     String?
+  status     String   @default("DRAFT")
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  campaign   MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
+
+model BrandKit {
+  businessId String  @id
+  logoUrl    String?
+  primary    String  @default("#0f766e")
+  tagline    String?
+  phone      String?
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model Referral {
+  id               String  @id @default(cuid())
+  referrerBusinessId String
+  referredEmail    String
+  status           String  @default("SIGNED_UP")
+  creditPaise      Int     @default(0)
+  referrer         Business @relation("Referrer", fields: [referrerBusinessId], references: [id], onDelete: Cascade)
+}
+
+model PlatformLead {
+  id          String   @id @default(cuid())
+  businessName String
+  ownerName   String?
+  phone       String?
+  city        String?
+  industry    String?
+  source      String?
+  status      String   @default("NEW")
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+model AdCampaign {
+  id         String   @id @default(cuid())
+  businessId String
+  provider   String
+  name       String
+  spendPaise Int      @default(0)
+  leads      Int      @default(0)
+  orders     Int      @default(0)
+  revenuePaise Int    @default(0)
+  status     String   @default("DRAFT")
+}
+
+model RecoveryOpportunity {
+  id                       String   @id @default(cuid())
+  businessId               String
+  customerId               String?
+  conversationId           String?
+  source                   String
+  opportunityType          String
+  estimatedOrderValuePaise Int?
+  lastInteractionAt        DateTime
+  recommendedAction        String
+  status                   String   @default("OPEN")
+  recovered                Boolean  @default(false)
+  recoveredValuePaise      Int      @default(0)
+  createdAt                DateTime @default(now())
+  business                 Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer                 Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  @@index([businessId, status])
+}
+
+model BusinessRule {
+  id               String   @id @default(cuid())
+  businessId       String
+  ruleType         String
+  priority         Int      @default(100)
+  condition        String   @default("{}")
+  action           String
+  approvalRequired Boolean  @default(true)
+  enabled          Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@index([businessId, ruleType])
+}
+
+model TimelineEvent {
+  id             String   @id @default(cuid())
+  businessId     String
+  customerId     String
+  conversationId String?
+  channel        String
+  kind           String
+  title          String
+  detail         String?
+  createdAt      DateTime @default(now())
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([businessId, customerId, createdAt])
+}
+
+model CustomerMemoryFact {
+  id         String   @id @default(cuid())
+  businessId String
+  customerId String
+  field      String
+  value      String
+  source     String
+  sourceId   String?
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([businessId, customerId])
+}
+
+model CaseStudyApproval {
+  id              String    @id @default(cuid())
+  businessId      String
+  status          String    @default("DRAFT")
+  published       Boolean   @default(false)
+  ownerApprovedAt DateTime?
+  metricsJson     String    @default("{}")
+  createdAt       DateTime  @default(now())
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
