@@ -3,11 +3,13 @@ import { getSessionState } from "@/lib/auth";
 import {
   createBusinessForOwner,
   getBusinessForUser,
+  provisionNewShop,
   updateBusiness,
 } from "@/lib/business";
 import { handleError, json } from "@/lib/http";
 import { listAccessibleBusinesses, resolveTenantContext } from "@/lib/platform/tenant";
 import { parseJson } from "@/lib/tenant";
+import { prisma } from "@/lib/prisma";
 import { createBusinessSchema, patchBusinessSchema } from "@/lib/validators";
 
 function serializeBusiness(
@@ -53,6 +55,19 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getSessionState();
     if (!session) return json({ error: "Please sign in." }, 401);
+
+    const existingId =
+      (await prisma.businessMembership.findFirst({
+        where: { userId: session.user.id },
+        orderBy: { createdAt: "asc" },
+        select: { businessId: true },
+      }))?.businessId ?? null;
+    if (existingId) {
+      await provisionNewShop(session.user.id, existingId);
+      const business = await getBusinessForUser(session.user.id, existingId, existingId);
+      return json({ business: serializeBusiness(business) });
+    }
+
     const body = await request.json();
     const parsed = createBusinessSchema.safeParse(body);
     if (!parsed.success) {

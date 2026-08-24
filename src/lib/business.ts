@@ -12,7 +12,6 @@ import { setActiveBusinessForUser } from "./session-store";
 import { HttpError } from "./tenant";
 import { DEFAULT_ELECTRICAL_RULES } from "./usp/rules";
 import { verticalFromCategory } from "./usp/verticals";
-import { getPlatformEnv } from "./platform/env";
 import { seedElectricalDemoCatalog } from "./usp/demo-catalog";
 import type { z } from "zod";
 import type { createBusinessSchema, patchBusinessSchema, patchSettingsSchema } from "./validators";
@@ -70,38 +69,49 @@ export async function createBusinessForOwner(userId: string, input: CreateBusine
     return created;
   });
 
-  await setActiveBusinessForUser(userId, business.id);
+  await provisionNewShop(userId, business.id, input.aiEmployeeName, business.name);
+  return business;
+}
+
+export async function provisionNewShop(
+  userId: string,
+  businessId: string,
+  aiEmployeeName = "Rahul",
+  businessName?: string,
+) {
+  await setActiveBusinessForUser(userId, businessId);
   await ensureBillingCatalog();
-  await startTrial(business.id, "STARTER");
-  await prisma.businessRule.createMany({
-    data: DEFAULT_ELECTRICAL_RULES.map((rule) => ({
-      businessId: business.id,
-      ruleType: rule.ruleType,
-      priority: rule.priority,
-      condition: JSON.stringify(rule.condition),
-      action: rule.action,
-      approvalRequired: rule.approvalRequired,
-      enabled: rule.enabled,
-    })),
-  });
-  if (getPlatformEnv().demoMode) {
-    const ctx = await resolveTenantContext(userId, business.id, business.id);
+  await startTrial(businessId, "STARTER");
+  const ruleCount = await prisma.businessRule.count({ where: { businessId } });
+  if (ruleCount === 0) {
+    await prisma.businessRule.createMany({
+      data: DEFAULT_ELECTRICAL_RULES.map((rule) => ({
+        businessId,
+        ruleType: rule.ruleType,
+        priority: rule.priority,
+        condition: JSON.stringify(rule.condition),
+        action: rule.action,
+        approvalRequired: rule.approvalRequired,
+        enabled: rule.enabled,
+      })),
+    });
+  }
+  if (process.env.DEMO_MODE === "true") {
+    const ctx = await resolveTenantContext(userId, businessId, businessId);
     await seedElectricalDemoCatalog(ctx);
   }
 
   await writeAudit({
-    businessId: business.id,
+    businessId,
     userId,
     actorType: "USER",
     action: "business.created",
     entityType: "Business",
-    entityId: business.id,
-    metadata: { name: business.name, aiEmployee: input.aiEmployeeName },
-  });
-  await trackFunnel({ name: "business_created", businessId: business.id, userId });
-  await trackFunnel({ name: "employee_created", businessId: business.id, userId });
-
-  return business;
+    entityId: businessId,
+    metadata: { name: businessName, aiEmployee: aiEmployeeName },
+  }).catch(() => undefined);
+  await trackFunnel({ name: "business_created", businessId, userId }).catch(() => undefined);
+  await trackFunnel({ name: "employee_created", businessId, userId }).catch(() => undefined);
 }
 
 export async function updateBusiness(ctx: TenantContext, input: PatchBusinessInput) {

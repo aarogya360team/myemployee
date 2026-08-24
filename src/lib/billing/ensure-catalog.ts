@@ -2,7 +2,15 @@ import { ADDON_CATALOG, PLAN_CATALOG } from "./catalog";
 import { prisma } from "@/lib/prisma";
 
 export async function ensureBillingCatalog() {
-  const count = await prisma.plan.count();
+  const count = await prisma.plan.count().catch((error: unknown) => {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    if (code === "P2021" || code === "P2022") {
+      throw new Error(
+        "Missing Plan tables. Run prisma/migrations/20260824180000_commerce_and_usp/migration.sql in the SQL editor.",
+      );
+    }
+    throw error;
+  });
   if (count >= PLAN_CATALOG.length) return;
   for (const plan of PLAN_CATALOG) {
     const row = await prisma.plan.upsert({

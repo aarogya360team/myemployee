@@ -105,8 +105,8 @@ export function OnboardingWizard({ initial }: { initial?: Initial }) {
     setLanguages((prev) => (prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]));
   }
 
-  async function persist(nextStep: number, json?: Partial<OnboardingJson>) {
-    if (!created) return;
+  async function persist(nextStep: number, json?: Partial<OnboardingJson>, ready = created) {
+    if (!ready) return;
     const res = await fetch("/api/onboarding", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -121,37 +121,37 @@ export function OnboardingWizard({ initial }: { initial?: Initial }) {
   }
 
   async function hire() {
-    if (created) {
-      setStep(3);
-      await persist(3);
-      return;
-    }
     setPending(true);
     setError("");
-    const res = await fetch("/api/business", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        category,
-        city,
-        defaultLanguage: languages.includes("hinglish") ? "hinglish" : languages[0],
-        languages,
-        aiEmployeeName: aiName,
-        aiTone,
-        avatar: appearanceId,
-        personality: { attire, addressForm, greeting, appearanceId, verbosity: "short" },
-        timezone: "Asia/Kolkata",
-      }),
-    });
-    const data = await res.json();
-    setPending(false);
-    if (!res.ok) {
-      setError(data.error ?? "Could not hire your employee.");
-      return;
+    if (!created) {
+      const res = await fetch("/api/business", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          category,
+          city,
+          defaultLanguage: languages.includes("hinglish") ? "hinglish" : languages[0],
+          languages,
+          aiEmployeeName: aiName,
+          aiTone,
+          avatar: appearanceId,
+          personality: { attire, addressForm, greeting, appearanceId, verbosity: "short" },
+          timezone: "Asia/Kolkata",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPending(false);
+        setError(data.error ?? "Could not hire your employee.");
+        return;
+      }
+      setCreated(true);
     }
-    setCreated(true);
+    setPending(false);
     setStep(3);
+    await persist(3, undefined, true);
+    router.refresh();
   }
 
   async function addProduct() {

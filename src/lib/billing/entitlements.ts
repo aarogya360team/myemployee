@@ -82,9 +82,16 @@ export async function incrementUsage(businessId: string, metric: string, quantit
 }
 
 export async function startTrial(businessId: string, planCode = "STARTER") {
+  const existing = await prisma.subscription.findFirst({
+    where: { businessId, status: { in: ["TRIALING", "ACTIVE", "GRACE"] } },
+  });
+  if (existing) return existing;
   const plan = await prisma.plan.findUnique({ where: { code: planCode } });
   if (!plan) {
-    throw new HttpError(500, "Plans are not seeded. Run npm run db:seed.");
+    throw new HttpError(
+      500,
+      "Billing plans are missing. Re-run prisma/migrations/20260824180000_commerce_and_usp/migration.sql, then try Hire again.",
+    );
   }
   const spec = PLAN_CATALOG.find((item) => item.code === planCode);
   const now = new Date();

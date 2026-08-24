@@ -18,7 +18,7 @@ Open `http://localhost:3000`. Sign up, hire Rahul, test in DEMO, then go live. L
 
 ## Vercel
 
-1. Create a **Supabase** (or Neon) Postgres database in Mumbai/`ap-south-1` if you can.
+1. Create a **Supabase** (or Neon) Postgres database. Use the **exact** pooler host from **Connect → ORMs → Prisma** — do not assume Mumbai/`ap-south-1`.
 2. Import the GitHub repo on Vercel (framework: Next.js). Region: `bom1` (see `vercel.json`).
 3. Set environment variables for Production and Preview:
 
