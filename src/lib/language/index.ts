@@ -1,5 +1,5 @@
 export { detectLanguage, rememberLanguage } from "./detect";
-export { detectIntent, isAffirmative, isNegative } from "./intent";
+export { detectIntent, isAffirmative, isNegative, looksLikeAddress, looksLikePaymentDone } from "./intent";
 export {
   EMPLOYEE_SPEECH_RULES,
   identityReply,

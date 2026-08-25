@@ -50,6 +50,65 @@ test("verified product + price intent moves the journey forward", () => {
   assert.equal(result.currentState, "PRICE_PROVIDED");
 });
 
+test("address after a quote creates the order when the draft is complete", () => {
+  const result = nextBestAction({
+    currentState: "QUOTATION_CREATED",
+    intent: "address",
+    text: "Delivery Karol Bagh, Delhi 110005",
+    draft: {
+      productSku: "PH-LED-12W-B22",
+      productName: "Philips 12W",
+      quantity: 50,
+      customerPhone: "9999900011",
+    },
+    productConfidence: 0.9,
+    productFound: true,
+    stockKnown: true,
+    stockOk: true,
+    priceKnown: true,
+  });
+  assert.equal(result.nextBestAction, "CREATE_ORDER");
+  assert.ok(result.draft.address);
+  assert.equal(result.draft.deliveryMethod, "courier");
+});
+
+test("provider-paid status starts fulfillment instead of chatting", () => {
+  const result = nextBestAction({
+    currentState: "PAYMENT_PENDING",
+    intent: "payment_done",
+    text: "Maine pay kar diya",
+    draft: {
+      productSku: "PH-LED-12W-B22",
+      quantity: 50,
+      address: "Karol Bagh, Delhi 110005",
+      customerPhone: "9999900011",
+    },
+    productConfidence: 0.9,
+    productFound: true,
+    stockKnown: true,
+    stockOk: true,
+    priceKnown: true,
+    paymentStatus: "paid",
+  });
+  assert.equal(result.nextBestAction, "START_FULFILLMENT");
+});
+
+test("customer saying paid does not mark paid without the provider", () => {
+  const result = nextBestAction({
+    currentState: "PAYMENT_PENDING",
+    intent: "payment_done",
+    text: "Maine pay kar diya",
+    draft: { productSku: "PH-LED-12W-B22", quantity: 50, address: "Karol Bagh" },
+    productConfidence: 0.9,
+    productFound: true,
+    stockKnown: true,
+    stockOk: true,
+    priceKnown: true,
+    paymentStatus: "pending",
+  });
+  assert.equal(result.nextBestAction, "REQUEST_PAYMENT");
+});
+
 test("quantity after price creates a quote instead of endless chat", () => {
   const result = nextBestAction({
     currentState: "PRICE_PROVIDED",

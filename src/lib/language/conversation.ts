@@ -126,6 +126,29 @@ function buildReply(
     };
   }
 
+  if (intent === "address") {
+    return {
+      reply: askOne(
+        language,
+        "Address note kar liya. Order confirm karun?",
+        "Address noted. Shall I confirm the order?",
+      ),
+      needsTool: true,
+      escalate: false,
+    };
+  }
+
+  if (intent === "payment_done") {
+    return {
+      reply:
+        language === "en"
+          ? "I will mark it paid only after the payment provider confirms."
+          : "Provider confirm kare tabhi paid likhunga.",
+      needsTool: true,
+      escalate: false,
+    };
+  }
+
   if (intent === "delivery_when") {
     return {
       reply: askOne(

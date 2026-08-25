@@ -1,5 +1,6 @@
-import { isRobotic, systemStylePrompt } from "@/lib/language";
 import { completeChat, llmConfigured } from "./openai";
+import { isRobotic, systemStylePrompt } from "@/lib/language";
+import type { RankedExample } from "@/lib/learning/rank";
 
 export type ReplyFacts = {
   priceLabels: string[];
@@ -24,6 +25,18 @@ export function inventedMoney(reply: string, allowedLabels: string[]) {
   });
 }
 
+function exampleBlock(examples: RankedExample[]) {
+  if (examples.length === 0) return "";
+  const lines = examples.slice(0, 6).map((ex, i) => {
+    const who = ex.source === "HUMAN" ? "owner takeover" : "successful AI turn";
+    return `${i + 1}. (${who}) Customer: ${ex.customerText.slice(0, 180)}\n   Reply style: ${ex.reply.slice(0, 220)}`;
+  });
+  return [
+    "How this shop actually talks — prefer owner takeovers over generic tone. Copy questions and phrasing, never copy rupee amounts, SKUs, or tracking from examples unless they are in Locked facts.",
+    ...lines,
+  ].join("\n");
+}
+
 export async function polishEmployeeReply(input: {
   draft: string;
   language: string;
@@ -33,6 +46,7 @@ export async function polishEmployeeReply(input: {
   customerText: string;
   facts: ReplyFacts;
   nextAction: string;
+  examples?: RankedExample[];
 }): Promise<string> {
   if (!llmConfigured()) return input.draft;
   const system = [
@@ -46,7 +60,10 @@ export async function polishEmployeeReply(input: {
     `Locked facts: ${JSON.stringify(input.facts)}`,
     `Required next action (do not skip): ${input.nextAction}`,
     `Customer said: ${input.customerText.slice(0, 500)}`,
-  ].join("\n");
+    exampleBlock(input.examples ?? []),
+  ]
+    .filter(Boolean)
+    .join("\n");
   const polished = await completeChat({
     system,
     user: `Draft to rewrite (keep meaning):\n${input.draft}`,

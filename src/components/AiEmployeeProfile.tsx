@@ -1,4 +1,5 @@
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
+import { LearningProgress, type LearningSnapshot } from "@/components/LearningProgress";
 import Link from "next/link";
 import {
   DAY_LABELS,
@@ -35,6 +36,7 @@ type Props = {
   };
   hours: Hours[];
   businessName: string;
+  learning?: LearningSnapshot | null;
 };
 
 function statusLabel(status: string) {
@@ -45,7 +47,7 @@ function statusLabel(status: string) {
   return "Offline";
 }
 
-export function AiEmployeeProfile({ employee, stats, hours, businessName }: Props) {
+export function AiEmployeeProfile({ employee, stats, hours, businessName, learning }: Props) {
   return (
     <div className="flex flex-col gap-5">
       <section className="panel p-5 shadow-sm">
@@ -71,6 +73,9 @@ export function AiEmployeeProfile({ employee, stats, hours, businessName }: Prop
         </p>
         <p className="mt-1 text-sm">Works for {businessName}</p>
         <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/app/try-whatsapp" className="btn-primary text-sm">
+            Test on WhatsApp
+          </Link>
           <Link href="/app/customers" className="btn-secondary text-sm">
             Customer memory
           </Link>
@@ -82,6 +87,8 @@ export function AiEmployeeProfile({ employee, stats, hours, businessName }: Prop
           </Link>
         </div>
       </section>
+
+      <LearningProgress employeeName={employee.name} learning={learning ?? null} />
 
       <section>
         <h2 className="mb-2 text-sm font-medium text-[var(--muted)]">Today</h2>

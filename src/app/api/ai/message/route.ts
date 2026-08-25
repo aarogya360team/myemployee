@@ -14,6 +14,7 @@ const schema = z.object({
   conversationId: z.string().optional(),
   customerPhone: z.string().trim().max(20).optional(),
   customerName: z.string().trim().max(80).optional(),
+  simulate: z.boolean().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       conversationId: parsed.data.conversationId,
       customerPhone: parsed.data.customerPhone,
       customerName: parsed.data.customerName,
+      simulate: parsed.data.simulate,
     });
 
     return json({
@@ -54,6 +56,9 @@ export async function POST(request: NextRequest) {
       voice: result.voice,
       escalate: result.escalate,
       conversationId: result.conversationId,
+      payment: "payment" in result ? result.payment : null,
+      delivery: "delivery" in result ? result.delivery : null,
+      learning: "learning" in result ? result.learning : null,
       debug: {
         currentState: result.currentState,
         nextBestAction: result.nextBestAction,

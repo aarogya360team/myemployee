@@ -1,7 +1,8 @@
 import { incrementUsage } from "@/lib/billing/entitlements";
 import { searchProducts } from "@/lib/engines/product-search";
-import { detectIntent, handleCustomerTurn } from "@/lib/language";
+import { detectIntent, handleCustomerTurn, looksLikeAddress } from "@/lib/language";
 import type { AppLanguage } from "@/lib/constants";
+import { recordLearningExample, similarShopExamples, learningStats } from "@/lib/learning";
 import { getPlatformEnv } from "@/lib/platform/env";
 import type { TenantContext } from "@/lib/platform/tenant";
 import { prisma } from "@/lib/prisma";
@@ -21,6 +22,15 @@ import { polishEmployeeReply } from "@/lib/llm/rewrite-reply";
 
 type Channel = "whatsapp" | "web" | "phone" | "instagram";
 
+const LEARN_FROM_ACTIONS = new Set([
+  "PROVIDE_PRICE",
+  "CREATE_QUOTE",
+  "CREATE_ORDER",
+  "REQUEST_PAYMENT",
+  "START_FULFILLMENT",
+  "BOOK_DELIVERY",
+]);
+
 export async function processOwnerTryoutTurn(input: {
   ctx: TenantContext;
   userId: string;
@@ -33,6 +43,7 @@ export async function processOwnerTryoutTurn(input: {
   conversationId?: string;
   customerPhone?: string;
   customerName?: string;
+  simulate?: boolean;
 }) {
   return processCustomerTurn(input);
 }
@@ -49,8 +60,11 @@ export async function processCustomerTurn(input: {
   conversationId?: string;
   customerPhone?: string;
   customerName?: string;
+  simulate?: boolean;
 }) {
-  if (getPlatformEnv().demoMode) {
+  const simulate = Boolean(input.simulate);
+  const mockOk = simulate || getPlatformEnv().demoMode;
+  if (simulate || getPlatformEnv().demoMode) {
     await seedElectricalDemoCatalog(input.ctx);
   }
   await ensureDefaultRules(input.ctx.businessId);
@@ -60,8 +74,9 @@ export async function processCustomerTurn(input: {
     include: { hours: true },
   });
   const vertical = getVerticalProfile(businessRow?.vertical);
+  const channel: Channel = simulate ? "whatsapp" : input.channel;
 
-  const requestedPhone = (input.customerPhone ?? "TRYOUT").trim() || "TRYOUT";
+  const requestedPhone = (input.customerPhone ?? (simulate ? "9999900011" : "TRYOUT")).trim() || (simulate ? "9999900011" : "TRYOUT");
   const existing = await prisma.customer.findMany({
     where: { businessId: input.ctx.businessId },
     select: { phone: true },
@@ -83,9 +98,9 @@ export async function processCustomerTurn(input: {
     create: {
       businessId: input.ctx.businessId,
       phone,
-      name: input.customerName || (phone === "TRYOUT" ? "Tryout customer" : null),
-      segment: phone === "TRYOUT" ? "TRYOUT" : "NEW",
-      notes: phone === "TRYOUT" ? "Web tryout — not a live WhatsApp customer" : null,
+      name: input.customerName || (phone === "TRYOUT" ? "Tryout customer" : simulate ? "WhatsApp test" : null),
+      segment: phone === "TRYOUT" || simulate ? "TRYOUT" : "NEW",
+      notes: phone === "TRYOUT" || simulate ? "Web tryout — not a live WhatsApp customer" : null,
     },
   });
 
@@ -97,7 +112,7 @@ export async function processCustomerTurn(input: {
         where: {
           businessId: input.ctx.businessId,
           customerId: customer.id,
-          channel: input.channel.toUpperCase(),
+          channel: channel.toUpperCase(),
           status: "OPEN",
         },
         orderBy: { updatedAt: "desc" },
@@ -109,7 +124,7 @@ export async function processCustomerTurn(input: {
       data: {
         businessId: input.ctx.businessId,
         customerId: customer.id,
-        channel: input.channel.toUpperCase(),
+        channel: channel.toUpperCase(),
         language: input.previousLanguage ?? "hinglish",
         currentState: "NEW_ENQUIRY",
         responsibleEmployeeId: input.employeeId,
@@ -175,6 +190,11 @@ export async function processCustomerTurn(input: {
   if (qty) draft.quantity = qty;
   if (promisedLater(input.text)) draft.promisedLater = true;
   if (best && (draft.quantity ?? 0) > best.stock) draft.stockShort = true;
+  if (!draft.deliveryMethod) draft.deliveryMethod = "courier";
+  if (!draft.customerPhone) draft.customerPhone = phone;
+  if (looksLikeAddress(input.text) && input.text.trim().length > 8) {
+    draft.address = input.text.trim();
+  }
 
   const rules = await loadRules(input.ctx.businessId);
   const discount = evaluateDiscountRule(rules, parseDiscountPercent(input.text));
@@ -191,6 +211,14 @@ export async function processCustomerTurn(input: {
     (angry ? "Customer appears angry" : null) ??
     (manager ? "Customer requested owner/manager" : null);
 
+  const openOrder = await prisma.order.findFirst({
+    where: { businessId: input.ctx.businessId, conversationId: live.id },
+    include: { payments: true, deliveries: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const paid = openOrder?.payments.find((p) => p.status === "paid");
+  const pendingPay = openOrder?.payments.find((p) => p.status === "pending");
+
   const completion = nextBestAction({
     currentState: (live.currentState as JourneyState) || "NEW_ENQUIRY",
     intent,
@@ -203,6 +231,9 @@ export async function processCustomerTurn(input: {
     priceKnown: Boolean(best && best.pricePaise > 0),
     escalateForced,
     escalateReason: escalateReason ?? undefined,
+    orderStatus: openOrder?.status,
+    paymentStatus: paid?.status ?? pendingPay?.status,
+    deliveryStatus: openOrder?.deliveries[0]?.status,
   });
 
   const employeeRow = await prisma.employee.findUnique({ where: { id: input.employeeId } });
@@ -210,7 +241,7 @@ export async function processCustomerTurn(input: {
 
   const turn = handleCustomerTurn({
     text: input.text,
-    channel: input.channel === "instagram" ? "web" : input.channel,
+    channel: channel === "instagram" ? "web" : channel,
     employeeName: input.employeeName,
     businessName: input.businessName,
     previousLanguage: input.previousLanguage,
@@ -247,7 +278,7 @@ export async function processCustomerTurn(input: {
         : `Kaunsa item — ${terms}? Unit: ${units}. Catalogue se confirm karke rate bataunga.`;
   }
 
-  if (completion.nextBestAction === "CREATE_ORDER" && best && draft.quantity && draft.address) {
+  if (completion.nextBestAction === "CREATE_ORDER" && best && draft.quantity && draft.address && !openOrder) {
     const order = await prisma.order.create({
       data: {
         businessId: input.ctx.businessId,
@@ -256,7 +287,7 @@ export async function processCustomerTurn(input: {
         status: "DRAFT",
         attribution: "AI_ASSISTED",
         aiRole: "AI_ASSISTED",
-        source: input.channel.toUpperCase(),
+        source: channel.toUpperCase(),
         totalPaise: best.pricePaise * draft.quantity,
         employeeId: input.employeeId,
         attributionEvidence: JSON.stringify({
@@ -289,13 +320,14 @@ export async function processCustomerTurn(input: {
       });
     }
     try {
-      await requestPayment(input.ctx, order.id);
+      const pay = await requestPayment(input.ctx, order.id, { mockOk });
       completion.currentState = "PAYMENT_PENDING";
       completion.nextBestAction = "REQUEST_PAYMENT";
+      const total = formatPaiseLabel(best.pricePaise * draft.quantity);
       reply =
         turn.language === "en"
-          ? `Order ${order.id.slice(-6)} is confirmed as a draft/payment request. I will not mark it paid until the payment provider confirms.`
-          : `Order ${order.id.slice(-6)} payment request nikal diya. Provider confirm kare tabhi paid likhunga.`;
+          ? `Order ${order.id.slice(-6)} is ready. Pay ${total}: ${pay.link}. I will not mark it paid until the payment provider confirms.`
+          : `Order ${order.id.slice(-6)} ready hai. ${total} pay karo: ${pay.link}. Provider confirm kare tabhi paid likhunga.`;
     } catch {
       reply =
         turn.language === "en"
@@ -304,34 +336,42 @@ export async function processCustomerTurn(input: {
     }
   }
 
-  const openOrder = await prisma.order.findFirst({
+  const latestOrder = await prisma.order.findFirst({
     where: { businessId: input.ctx.businessId, conversationId: live.id },
     include: { payments: true, deliveries: true },
     orderBy: { createdAt: "desc" },
   });
-  if (openOrder && completion.nextBestAction === "REQUEST_PAYMENT" && !openOrder.payments.some((p) => p.status === "paid")) {
+  if (latestOrder && completion.nextBestAction === "REQUEST_PAYMENT" && !latestOrder.payments.some((p) => p.status === "paid")) {
     try {
-      const pay = await requestPayment(input.ctx, openOrder.id);
+      const pay = await requestPayment(input.ctx, latestOrder.id, { mockOk });
+      const amount = formatPaiseLabel(latestOrder.totalPaise);
       reply =
         turn.language === "en"
-          ? `Payment link is ready (${pay.link}). I will not mark paid until the provider confirms.`
-          : `Payment link ready hai. Provider confirm kare tabhi paid.`;
+          ? `Payment of ${amount} is ready (${pay.link}). I will not mark paid until the provider confirms.`
+          : `${amount} ka payment ready hai: ${pay.link}. Provider confirm kare tabhi paid.`;
     } catch {
       /* keep existing reply */
     }
   }
-  if (openOrder && (completion.nextBestAction === "START_FULFILLMENT" || completion.nextBestAction === "BOOK_DELIVERY")) {
-    try {
-      const delivery = await bookDelivery(input.ctx, openOrder.id);
+  if (latestOrder && (completion.nextBestAction === "START_FULFILLMENT" || completion.nextBestAction === "BOOK_DELIVERY")) {
+    if (completion.missingInformation.includes("delivery_address")) {
       reply =
         turn.language === "en"
-          ? `Delivery booked. Tracking ${delivery.trackingId}. Not marked delivered until the courier confirms.`
-          : `Delivery book ho gayi. Tracking ${delivery.trackingId}. Courier confirm kare tabhi delivered.`;
-    } catch {
-      reply =
-        turn.language === "en"
-          ? "Payment is still pending or the courier did not confirm. I will not pretend delivery is done."
-          : "Payment pending hai ya courier confirm nahi hua. Delivered nahi likhunga.";
+          ? "Payment is in. Please send the delivery address so I can book the courier."
+          : "Payment aa gaya. Delivery address bhejiye, courier book kar deta hoon.";
+    } else {
+      try {
+        const delivery = await bookDelivery(input.ctx, latestOrder.id, { mockOk });
+        reply =
+          turn.language === "en"
+            ? `Delivery booked. Tracking ${delivery.trackingId}. Not marked delivered until the courier confirms.`
+            : `Delivery book ho gayi. Tracking ${delivery.trackingId}. Courier confirm kare tabhi delivered.`;
+      } catch {
+        reply =
+          turn.language === "en"
+            ? "Payment is still pending or the courier did not confirm. I will not pretend delivery is done."
+            : "Payment pending hai ya courier confirm nahi hua. Delivered nahi likhunga.";
+      }
     }
   }
   if (intent === "feedback") {
@@ -340,7 +380,7 @@ export async function processCustomerTurn(input: {
         businessId: input.ctx.businessId,
         customerId: customer.id,
         conversationId: live.id,
-        channel: input.channel.toUpperCase(),
+        channel: channel.toUpperCase(),
         kind: "FEEDBACK",
         title: "Customer feedback",
         detail: input.text.slice(0, 240),
@@ -382,7 +422,14 @@ export async function processCustomerTurn(input: {
   const priceLabels = [
     best ? formatPaiseLabel(best.pricePaise) : "",
     best && draft.quantity ? formatPaiseLabel(best.pricePaise * draft.quantity) : "",
+    latestOrder ? formatPaiseLabel(latestOrder.totalPaise) : "",
   ].filter(Boolean);
+  let examples: Awaited<ReturnType<typeof similarShopExamples>> = [];
+  try {
+    examples = await similarShopExamples(input.ctx.businessId, input.text);
+  } catch {
+    examples = [];
+  }
   reply = await polishEmployeeReply({
     draft: reply,
     language: turn.language,
@@ -395,6 +442,7 @@ export async function processCustomerTurn(input: {
       productNames: best ? [best.name] : [],
     },
     nextAction: completion.nextBestAction,
+    examples,
   });
 
   await prisma.conversation.update({
@@ -419,7 +467,7 @@ export async function processCustomerTurn(input: {
       businessId: input.ctx.businessId,
       customerId: customer.id,
       conversationId: live.id,
-      channel: input.channel.toUpperCase(),
+      channel: channel.toUpperCase(),
       kind: completion.nextBestAction,
       title: `${input.employeeName}: ${completion.nextBestAction}`,
       detail: completion.reason,
@@ -449,10 +497,52 @@ export async function processCustomerTurn(input: {
     });
   }
 
+  if (completion.draft.address) {
+    const existingAddr = await prisma.customerAddress.findFirst({ where: { customerId: customer.id } });
+    if (existingAddr) {
+      await prisma.customerAddress.update({
+        where: { id: existingAddr.id },
+        data: { line: completion.draft.address },
+      });
+    } else {
+      await prisma.customerAddress.create({
+        data: { customerId: customer.id, line: completion.draft.address, isDefault: true },
+      });
+    }
+  }
+
+  if (LEARN_FROM_ACTIONS.has(completion.nextBestAction)) {
+    try {
+      await recordLearningExample({
+        businessId: input.ctx.businessId,
+        source: "AI_SUCCESS",
+        intent,
+        customerText: input.text,
+        reply,
+        journeyState: completion.currentState,
+        nextAction: completion.nextBestAction,
+      });
+    } catch {
+      /* Learning table may not be applied yet. */
+    }
+  }
+
   try {
     await incrementUsage(input.ctx.businessId, "AI_INTERACTIONS", 1);
   } catch {
     // Entitlement errors are returned by the route if needed; tryout still replies.
+  }
+
+  const fulfillmentOrder = await prisma.order.findFirst({
+    where: { businessId: input.ctx.businessId, conversationId: live.id },
+    include: { payments: true, deliveries: true },
+    orderBy: { createdAt: "desc" },
+  });
+  let learning = { humanReplies: 0, aiSuccesses: 0, skillsUnlocked: [] as string[], readyForMore: false, total: 0 };
+  try {
+    learning = await learningStats(input.ctx.businessId);
+  } catch {
+    /* ignore */
   }
 
   return {
@@ -469,6 +559,22 @@ export async function processCustomerTurn(input: {
     confidence: completion.confidence,
     escalate: completion.nextBestAction === "ESCALATE_HUMAN",
     voice: turn.voice,
+    payment: fulfillmentOrder?.payments[0]
+      ? {
+          id: fulfillmentOrder.payments[0].id,
+          link: fulfillmentOrder.payments[0].link,
+          amountPaise: fulfillmentOrder.payments[0].amountPaise,
+          status: fulfillmentOrder.payments[0].status,
+        }
+      : null,
+    delivery: fulfillmentOrder?.deliveries[0]
+      ? {
+          id: fulfillmentOrder.deliveries[0].id,
+          trackingId: fulfillmentOrder.deliveries[0].trackingId,
+          status: fulfillmentOrder.deliveries[0].status,
+        }
+      : null,
+    learning,
   };
 }
 

@@ -18,6 +18,7 @@ import {
   Package,
   Scale,
   ShieldAlert,
+  Smartphone,
   UserRound,
   Users,
   X,
@@ -38,6 +39,7 @@ const NAV = [
     items: [
       { href: "/app", label: "Today", icon: LayoutDashboard },
       { href: "/app/inbox", label: "Inbox", icon: Inbox },
+      { href: "/app/try-whatsapp", label: "Test chat", icon: Smartphone },
       { href: "/app/orders", label: "Orders", icon: Package },
       { href: "/app/opportunities", label: "Money at risk", icon: AlertTriangle },
       { href: "/app/escalations", label: "Take over", icon: ShieldAlert },

@@ -1,4 +1,5 @@
 import type { CustomerIntent } from "@/lib/language/intent";
+import { looksLikeAddress } from "@/lib/language/intent";
 import { orderCompleteness, type OrderDraft } from "@/lib/engines/completeness";
 
 export const JOURNEY_STATES = [
@@ -123,8 +124,12 @@ export function nextBestAction(input: CompletionInput): CompletionResult {
   const draft: JourneyDraft = {
     ...input.draft,
     quantity: qty,
+    deliveryMethod: input.draft.deliveryMethod || "courier",
     stallCount: input.intent === "other" ? (input.draft.stallCount ?? 0) + 1 : 0,
   };
+  if ((input.intent === "address" || looksLikeAddress(input.text)) && input.text.trim().length > 8) {
+    draft.address = input.text.trim();
+  }
 
   if (input.escalateForced) {
     return result({
@@ -191,6 +196,19 @@ export function nextBestAction(input: CompletionInput): CompletionResult {
     });
   }
 
+  if (input.intent === "payment_done") {
+    return result({
+      currentState: "PAYMENT_PENDING",
+      nextBestAction: "REQUEST_PAYMENT",
+      missingInformation: [],
+      blockingReason: "Payment not confirmed by provider",
+      responsibleEmployee: "AI",
+      confidence: 0.8,
+      reason: "Customer says they paid — wait for the payment provider, do not mark paid",
+      draft,
+    });
+  }
+
   if (input.orderStatus === "CONFIRMED" || input.currentState === "ORDER_CONFIRMED") {
     return result({
       currentState: "PAYMENT_PENDING",
@@ -204,10 +222,6 @@ export function nextBestAction(input: CompletionInput): CompletionResult {
     });
   }
 
-  if (input.intent === "address" && input.text.trim().length > 8) {
-    draft.address = input.text.trim();
-  }
-
   if (input.productFound && input.productConfidence >= 0.35) {
     if (input.intent === "stock" || (input.stockKnown && input.stockOk === false)) {
       return result({
@@ -218,6 +232,22 @@ export function nextBestAction(input: CompletionInput): CompletionResult {
         responsibleEmployee: input.stockOk === false ? "HUMAN" : "AI",
         confidence: Math.min(input.productConfidence, 0.9),
         reason: "Customer asked availability — check stock before promising",
+        draft,
+      });
+    }
+
+    if (input.intent === "address") {
+      const completeness = orderCompleteness(draft);
+      return result({
+        currentState: completeness.complete ? "ORDER_DRAFT" : "QUOTATION_CREATED",
+        nextBestAction: completeness.complete ? "CREATE_ORDER" : "CREATE_QUOTE",
+        missingInformation: completeness.missing,
+        blockingReason: completeness.complete ? null : completeness.missing[0] ?? null,
+        responsibleEmployee: "AI",
+        confidence: completeness.complete ? 0.86 : 0.74,
+        reason: completeness.complete
+          ? "Address in — create the order"
+          : "Address noted — ask only what is still missing",
         draft,
       });
     }
@@ -276,6 +306,20 @@ export function nextBestAction(input: CompletionInput): CompletionResult {
           draft,
         });
       }
+    }
+
+    const ready = orderCompleteness(draft);
+    if (ready.complete) {
+      return result({
+        currentState: "ORDER_DRAFT",
+        nextBestAction: "CREATE_ORDER",
+        missingInformation: [],
+        blockingReason: null,
+        responsibleEmployee: "AI",
+        confidence: 0.86,
+        reason: "Product, quantity and address are in — create the order",
+        draft,
+      });
     }
 
     return result({

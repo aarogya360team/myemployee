@@ -95,6 +95,12 @@ test("verified price may be spoken; unverified must not", () => {
   assert.equal(withFact.needsTool, false);
 });
 
+test("Karol Bagh with a pincode is an address, not a delivery-time chat", () => {
+  assert.equal(detectIntent("Delivery Karol Bagh, Delhi 110005"), "address");
+  assert.equal(detectIntent("Bhai kal delivery ho jayegi?"), "delivery_when");
+  assert.equal(detectIntent("Maine pay kar diya"), "payment_done");
+});
+
 test("feedback is a distinct intent, not a fake CSAT score", () => {
   assert.equal(detectIntent("Service achi lagi"), "feedback");
   assert.equal(detectIntent("Maal theek hai, santusht hoon"), "feedback");

@@ -27,14 +27,14 @@ export async function confirmOrder(ctx: TenantContext, orderId: string) {
   return getOrder(ctx, orderId);
 }
 
-export async function requestPayment(ctx: TenantContext, orderId: string) {
+export async function requestPayment(ctx: TenantContext, orderId: string, opts?: { mockOk?: boolean }) {
   const order = await confirmOrder(ctx, orderId);
   const existing = order.payments.find((p) => p.status === "pending" || p.status === "paid");
   if (existing?.status === "paid") return existing;
   if (existing?.status === "pending") return existing;
 
-  const pay = await paymentsFor(ctx.businessId);
-  const razorpay = await getRazorpayConfig(ctx.businessId);
+  const pay = await paymentsFor(ctx.businessId, opts);
+  const razorpay = opts?.mockOk ? null : await getRazorpayConfig(ctx.businessId);
   const link = await pay.createPaymentLink({
     amountPaise: order.totalPaise,
     reference: order.id,
@@ -146,15 +146,15 @@ export function canBookDelivery(payments: { status: string }[]) {
   return payments.some((p) => p.status === "paid");
 }
 
-export async function bookDelivery(ctx: TenantContext, orderId: string) {
+export async function bookDelivery(ctx: TenantContext, orderId: string, opts?: { mockOk?: boolean }) {
   const order = await getOrder(ctx, orderId);
   if (!canBookDelivery(order.payments)) {
     throw new HttpError(409, "Delivery is not booked until payment is confirmed.");
   }
   const existing = order.deliveries[0];
   if (existing) return existing;
-  const courier = await deliveryFor(ctx.businessId);
-  const shiprocket = await getShiprocketConfig(ctx.businessId);
+  const courier = await deliveryFor(ctx.businessId, opts);
+  const shiprocket = opts?.mockOk ? null : await getShiprocketConfig(ctx.businessId);
   const booked = await courier.createDelivery({
     orderId: order.id,
     customerName: order.customer?.name ?? undefined,

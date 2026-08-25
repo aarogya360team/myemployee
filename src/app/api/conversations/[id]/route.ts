@@ -1,3 +1,5 @@
+import { detectIntent } from "@/lib/language";
+import { recordLearningExample, learningStats } from "@/lib/learning";
 import { NextRequest } from "next/server";
 import { getSessionState } from "@/lib/auth";
 import { handleError, json } from "@/lib/http";
@@ -81,7 +83,32 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const message = await prisma.message.create({
       data: { conversationId: conversation.id, sender: "owner", body: parsed.data.text },
     });
-    return json({ message });
+    const customerMsgs = conversation.messages.filter((row) => row.sender === "customer");
+    const last = customerMsgs.at(-1)?.body ?? "";
+    const prev = customerMsgs.at(-2)?.body ?? "";
+    const customerText = last.length < 12 && prev ? `${prev}\n${last}` : last;
+    let learned = false;
+    try {
+      await recordLearningExample({
+        businessId: ctx.businessId,
+        source: "HUMAN",
+        intent: detectIntent(last || parsed.data.text),
+        customerText: customerText || parsed.data.text,
+        reply: parsed.data.text,
+        journeyState: conversation.currentState,
+        nextAction: conversation.nextBestAction,
+      });
+      learned = true;
+    } catch {
+      learned = false;
+    }
+    let learning = null;
+    try {
+      learning = await learningStats(ctx.businessId);
+    } catch {
+      learning = null;
+    }
+    return json({ message, learned, learning });
   } catch (error) {
     return handleError(error);
   }

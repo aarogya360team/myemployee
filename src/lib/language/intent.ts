@@ -8,6 +8,7 @@ export type CustomerIntent =
   | "confirm_no"
   | "delivery_when"
   | "address"
+  | "payment_done"
   | "invoice"
   | "complaint"
   | "refund"
@@ -58,6 +59,25 @@ function has(text: string, needles: string[]) {
   return needles.some((n) => t === n || t.includes(n));
 }
 
+export function looksLikeAddress(raw: string) {
+  const text = raw.trim().toLowerCase();
+  if (text.length < 8) return false;
+  if (/\b\d{6}\b/.test(text)) return true;
+  if (/address|kahan bhej|kahaan bhej|delivery kahan|delivery kahaan|kahan deliver/.test(text)) {
+    return true;
+  }
+  return /(tilak|nagar|gali|sector|delhi|bagh|colony|road|marg|chowk|block|lane|vihar|enclave|karol|noida|gurgaon|gurugram|mumbai|bangalore|bengaluru|hyderabad|pune|jaipur|lucknow|kanpur|indore)/.test(
+    text,
+  );
+}
+
+export function looksLikePaymentDone(raw: string) {
+  const text = raw.trim().toLowerCase();
+  return /maine pay|i('ve| have) paid|paid ho|payment (ho|kar|done|kar diya)|upi (kar|ho)|paise de diye|amount sent|pay kar diya/.test(
+    text,
+  );
+}
+
 export function detectIntent(raw: string): CustomerIntent {
   const text = raw.trim().toLowerCase();
   if (!text) return "other";
@@ -76,13 +96,12 @@ export function detectIntent(raw: string): CustomerIntent {
   ) {
     return /refund|wapas|paise/.test(text) ? "refund" : "complaint";
   }
+  if (looksLikePaymentDone(text)) return "payment_done";
   if (/bill|invoice|receipt/.test(text)) return "invoice";
   if (/acha laga|santusht|feedback|rating|\bstars\b|service achi|maal theek/.test(text)) {
     return "feedback";
   }
-  if (/address|kahan|kahaan|delivery kahan|tilak|nagar|gali|sector/.test(text) && text.length > 8) {
-    return "address";
-  }
+  if (looksLikeAddress(text)) return "address";
   if (/kal|parso|parson|tomorrow|aaj|delivery|bhej dena|mil jayega/.test(text)) {
     return "delivery_when";
   }

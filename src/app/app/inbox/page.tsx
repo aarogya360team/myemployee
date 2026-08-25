@@ -36,7 +36,12 @@ export default async function InboxPage() {
         description={
           whatsapp.connected
             ? `${ai.name} is on WhatsApp${whatsapp.displayPhone ? ` · ${whatsapp.displayPhone}` : "."}`
-            : `${whatsapp.merchantMessage} Open a conversation to see order, payment and next action.`
+            : `${whatsapp.merchantMessage} Open Test chat to run the full sale without Meta.`
+        }
+        actions={
+          <Link href="/app/try-whatsapp" className="btn-primary text-sm">
+            Test chat
+          </Link>
         }
       />
       {conversations.length === 0 ? (

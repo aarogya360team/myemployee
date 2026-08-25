@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { TenantContext } from "@/lib/platform/tenant";
 
-/** Electrical demo SKUs — only when DEMO_MODE is on. Never presented as live shop data. */
+/** Electrical demo SKUs — DEMO_MODE or the WhatsApp test chat. Never presented as live shop data. */
 export const ELECTRICAL_DEMO_PRODUCTS = [
   {
     sku: "PH-LED-12W-B22",

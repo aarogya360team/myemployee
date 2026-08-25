@@ -99,16 +99,21 @@ export function ConversationWorkspace({
           ))}
         </div>
         {human ? (
-          <div className="flex gap-2">
-            <input
-              className="field"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Reply as the owner"
-            />
-            <button type="button" className="btn-primary shrink-0" disabled={pending} onClick={() => void reply()}>
-              Send
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <input
+                className="field"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Reply as the owner"
+              />
+              <button type="button" className="btn-primary shrink-0" disabled={pending} onClick={() => void reply()}>
+                Send
+              </button>
+            </div>
+            <p className="text-xs text-[var(--muted)]">
+              {employeeName} saves this reply and uses it the next time a customer asks something similar.
+            </p>
           </div>
         ) : (
           <p className="text-sm text-[var(--muted)]">{employeeName} is handling this conversation.</p>
