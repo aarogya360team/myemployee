@@ -14,7 +14,7 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run("npx", ["tsx", "--test", "tests/language.test.ts", "tests/usp.test.ts", "tests/onboarding.test.ts"]);
+run("npx", ["tsx", "--test", "tests/language.test.ts", "tests/usp.test.ts", "tests/onboarding.test.ts", "tests/llm.test.ts"]);
 
 const url = process.env.DATABASE_URL ?? "";
 if (!url.startsWith("postgres")) {

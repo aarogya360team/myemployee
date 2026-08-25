@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { getSessionState } from "@/lib/auth";
 import { handleError, json } from "@/lib/http";
-import { upsertIntegration } from "@/lib/integrations";
+import { getShiprocketConfig, upsertIntegration } from "@/lib/integrations";
 import { requireOwnerOrAdmin, resolveTenantContext } from "@/lib/platform/tenant";
 import { setPluginEnabled } from "@/lib/platform/plugins";
 import { z } from "zod";
@@ -10,6 +10,19 @@ const schema = z.object({
   email: z.string().trim().email().max(120),
   password: z.string().trim().min(4).max(120),
 });
+
+export async function GET() {
+  try {
+    const session = await getSessionState();
+    if (!session) return json({ error: "Please sign in." }, 401);
+    const ctx = await resolveTenantContext(session.user.id, null, session.activeBusinessId);
+    requireOwnerOrAdmin(ctx);
+    const live = await getShiprocketConfig(ctx.businessId);
+    return json({ connected: Boolean(live), email: live?.email ?? null });
+  } catch (error) {
+    return handleError(error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

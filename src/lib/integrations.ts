@@ -47,6 +47,30 @@ export async function getIntegration<T>(businessId: string, provider: string, ty
   return { ...row, config: parseJson<T>(row.config, {} as T) };
 }
 
+function encryptPayments(config: RazorpayConfig): RazorpayConfig {
+  return {
+    ...config,
+    keySecret:
+      config.keySecret && !config.keySecret.startsWith("enc:")
+        ? encryptSecret(config.keySecret)
+        : config.keySecret,
+    webhookSecret:
+      config.webhookSecret && config.webhookSecret.length > 0 && !config.webhookSecret.startsWith("enc:")
+        ? encryptSecret(config.webhookSecret)
+        : config.webhookSecret || undefined,
+  };
+}
+
+function encryptDelivery(config: ShiprocketConfig): ShiprocketConfig {
+  return {
+    ...config,
+    password:
+      config.password && !config.password.startsWith("enc:")
+        ? encryptSecret(config.password)
+        : config.password,
+  };
+}
+
 export async function upsertIntegration(input: {
   businessId: string;
   provider: string;
@@ -59,7 +83,11 @@ export async function upsertIntegration(input: {
   const config =
     input.provider === "meta" && input.type === "whatsapp"
       ? encryptWhatsApp(input.config as WhatsAppConfig)
-      : input.config;
+      : input.provider === "razorpay" && input.type === "payments"
+        ? encryptPayments(input.config as RazorpayConfig)
+        : input.provider === "shiprocket" && input.type === "delivery"
+          ? encryptDelivery(input.config as ShiprocketConfig)
+          : input.config;
   const live = input.enabled && input.connectionStatus !== "NOT_CONNECTED";
   return prisma.integration.upsert({
     where: {
@@ -109,13 +137,17 @@ export async function getWhatsAppConfig(businessId: string) {
 export async function getRazorpayConfig(businessId: string) {
   const row = await getIntegration<RazorpayConfig>(businessId, "razorpay", "payments");
   if (!row?.config.keyId || !row.config.keySecret) return null;
-  return row.config;
+  return {
+    ...row.config,
+    keySecret: decryptSecret(row.config.keySecret),
+    webhookSecret: row.config.webhookSecret ? decryptSecret(row.config.webhookSecret) : undefined,
+  };
 }
 
 export async function getShiprocketConfig(businessId: string) {
   const row = await getIntegration<ShiprocketConfig>(businessId, "shiprocket", "delivery");
   if (!row?.config.email || !row.config.password) return null;
-  return row.config;
+  return { ...row.config, password: decryptSecret(row.config.password) };
 }
 
 export async function merchantWhatsAppStatus(businessId: string, connectReady: boolean) {

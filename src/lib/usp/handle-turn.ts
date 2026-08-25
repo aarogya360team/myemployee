@@ -17,6 +17,7 @@ import { promisedLater, markOpportunityRecovered } from "./recovery";
 import { bookDelivery, requestPayment } from "./fulfillment";
 import { resolveEmployeeDuty } from "@/lib/employee-duty";
 import { parsePersonality } from "@/lib/employee-identity";
+import { polishEmployeeReply } from "@/lib/llm/rewrite-reply";
 
 type Channel = "whatsapp" | "web" | "phone" | "instagram";
 
@@ -377,6 +378,24 @@ export async function processCustomerTurn(input: {
         ? "I'll get the owner on this. I've written a short brief so they don't need the full chat."
         : "Owner se confirm karwaata hoon. Unke liye short brief likh diya — poori chat padhne ki zaroorat nahi.";
   }
+
+  const priceLabels = [
+    best ? formatPaiseLabel(best.pricePaise) : "",
+    best && draft.quantity ? formatPaiseLabel(best.pricePaise * draft.quantity) : "",
+  ].filter(Boolean);
+  reply = await polishEmployeeReply({
+    draft: reply,
+    language: turn.language,
+    employeeName: input.employeeName,
+    businessName: input.businessName,
+    tone: personality.tone || "friendly",
+    customerText: input.text,
+    facts: {
+      priceLabels,
+      productNames: best ? [best.name] : [],
+    },
+    nextAction: completion.nextBestAction,
+  });
 
   await prisma.conversation.update({
     where: { id: live.id },

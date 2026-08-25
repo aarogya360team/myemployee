@@ -21,56 +21,66 @@ type PatchBusinessInput = z.infer<typeof patchBusinessSchema>;
 type PatchSettingsInput = z.infer<typeof patchSettingsSchema>;
 
 export async function createBusinessForOwner(userId: string, input: CreateBusinessInput) {
-  const business = await prisma.$transaction(async (tx) => {
-    const created = await tx.business.create({
-      data: {
-        name: input.name,
-        legalName: input.legalName || null,
-        category: input.category,
-        description: input.description || null,
-        address: input.address || null,
-        city: input.city,
-        phone: input.phone && input.phone.replace(/\D/g, "").length >= 8 ? input.phone : "pending",
-        email: input.email || null,
-        gstin: input.gstin || null,
-        timezone: input.timezone,
-        defaultLanguage: input.defaultLanguage,
-        vertical: verticalFromCategory(input.category),
-        onboardingStep: 3,
-        onboardingJson: "{}",
-        memberships: {
-          create: { userId, role: "OWNER" },
-        },
-        settings: {
-          create: defaultSettingsCreate(input.languages, input.aiTone, input.defaultLanguage),
-        },
-        hours: {
-          create: input.hours?.length === 7 ? input.hours : DEFAULT_BUSINESS_HOURS,
-        },
-        employees: {
-          create: defaultAiEmployeeData(input.aiEmployeeName, input.languages, input.aiTone, {
-            avatar: input.avatar,
-            personality: input.personality,
-          }),
-        },
-        features: {
-          create: defaultFeatureRows(),
-        },
-        referralCode: `AU${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-      },
-      include: {
-        settings: true,
-        hours: { orderBy: { dayOfWeek: "asc" } },
-        employees: true,
-        memberships: true,
-        features: true,
-      },
-    });
-    return created;
-  });
-
-  await provisionNewShop(userId, business.id, input.aiEmployeeName, business.name);
-  return business;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const business = await prisma.$transaction(async (tx) => {
+        const created = await tx.business.create({
+          data: {
+            name: input.name,
+            legalName: input.legalName || null,
+            category: input.category,
+            description: input.description || null,
+            address: input.address || null,
+            city: input.city,
+            phone: input.phone && input.phone.replace(/\D/g, "").length >= 8 ? input.phone : "pending",
+            email: input.email || null,
+            gstin: input.gstin || null,
+            timezone: input.timezone,
+            defaultLanguage: input.defaultLanguage,
+            vertical: verticalFromCategory(input.category),
+            onboardingStep: 3,
+            onboardingJson: "{}",
+            memberships: {
+              create: { userId, role: "OWNER" },
+            },
+            settings: {
+              create: defaultSettingsCreate(input.languages, input.aiTone, input.defaultLanguage),
+            },
+            hours: {
+              create: input.hours?.length === 7 ? input.hours : DEFAULT_BUSINESS_HOURS,
+            },
+            employees: {
+              create: defaultAiEmployeeData(input.aiEmployeeName, input.languages, input.aiTone, {
+                avatar: input.avatar,
+                personality: input.personality,
+              }),
+            },
+            features: {
+              create: defaultFeatureRows(),
+            },
+            referralCode: `AU${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          },
+          include: {
+            settings: true,
+            hours: { orderBy: { dayOfWeek: "asc" } },
+            employees: true,
+            memberships: true,
+            features: true,
+          },
+        });
+        return created;
+      });
+      await provisionNewShop(userId, business.id, input.aiEmployeeName, business.name);
+      return business;
+    } catch (error) {
+      lastError = error;
+      const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+      if (code === "P2002") continue;
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 export async function provisionNewShop(

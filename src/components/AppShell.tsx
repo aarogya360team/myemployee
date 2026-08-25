@@ -7,6 +7,7 @@ import { useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
+  Banknote,
   BookOpen,
   Briefcase,
   Inbox,
@@ -47,6 +48,7 @@ const NAV = [
     items: [
       { href: "/app/products", label: "Catalogue", icon: BookOpen },
       { href: "/app/whatsapp", label: "WhatsApp", icon: MessageCircle },
+      { href: "/app/payments", label: "Payments", icon: Banknote },
       { href: "/app/customers", label: "Customers", icon: Users },
       { href: "/app/rules", label: "Rules", icon: Scale },
       { href: "/app/team", label: "Team", icon: Briefcase },
